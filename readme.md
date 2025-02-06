@@ -9,7 +9,7 @@ This script extracts resource blocks from HCL files for Terraform and saves them
 ```
 go build -o hcl-separator
 ```
-#### install
+#### Install (for Ubuntu)
 
 ```
 mv ./hcl-separator ~/.local/bin/
