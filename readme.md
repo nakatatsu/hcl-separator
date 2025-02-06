@@ -9,22 +9,21 @@ This script extracts resource blocks from HCL files for Terraform and saves them
 ```
 go build -o hcl-separator
 ```
-#### Install (for Ubuntu)
+
+### Install (for Ubuntu)
 
 ```
 mv ./hcl-separator ~/.local/bin/
-chmod +x ~/.local/bin/hcl-separator
 ```
 
-### Separate
+### Extract resource blocks
 
 ```
 hcl-separator /tmp/example.tf ./output
 ```
 
-### Join separated files
+### Merge extracted files back into a single Terraform file
 
 ```
 bash ./scripts/merger.sh ./output ./main.tf
 ```
-
