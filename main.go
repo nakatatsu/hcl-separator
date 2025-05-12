@@ -1,64 +1,104 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
-	"log"
 	"os"
-	"path/filepath"
+	"strings"
 
 	"github.com/hashicorp/hcl/v2"
-	"github.com/hashicorp/hcl/v2/hclwrite"
+	"github.com/hashicorp/hcl/v2/hclparse"
+	"github.com/hashicorp/hcl/v2/hclsyntax"
 )
 
 func main() {
 	if len(os.Args) != 3 {
-		log.Fatalf("Usage: %s <input_file> <output_dir>", os.Args[0])
+		fmt.Fprintf(os.Stderr, "Usage: %s <file> <resource_type.name>\n", os.Args[0])
+		os.Exit(1)
+	}
+	filePath := os.Args[1]
+	full := os.Args[2]
+
+	// Split "type.name" into type and name
+	dot := strings.IndexRune(full, '.')
+	if dot == -1 {
+		fmt.Fprintln(os.Stderr, "Please specify the resource as type.name")
+		os.Exit(1)
+	}
+	resType, resName := full[:dot], full[dot+1:]
+
+	/* -------- Parse HCL and obtain the AST -------- */
+	parser := hclparse.NewParser()
+	file, diags := parser.ParseHCLFile(filePath)
+	exitIfDiag(diags)
+
+	syntaxFile, ok := file.Body.(*hclsyntax.Body)
+	if !ok {
+		fmt.Fprintln(os.Stderr, "Failed to convert to HCL syntax body")
+		os.Exit(1)
 	}
 
-	inputFile := os.Args[1]
-	outputDir := os.Args[2]
-
-	// Ensure output directory exists
-	if err := os.MkdirAll(outputDir, os.ModePerm); err != nil {
-		log.Fatalf("Failed to create output directory: %v", err)
-	}
-
-	// Read the HCL file
-	src, err := os.ReadFile(inputFile)
-	if err != nil {
-		log.Fatalf("Failed to read file %s: %v", inputFile, err)
-	}
-
-	// Parse the HCL file
-	file, diags := hclwrite.ParseConfig(src, inputFile, hcl.Pos{Line: 1, Column: 1})
-	if diags.HasErrors() {
-		log.Fatalf("Failed to parse file %s: %v", inputFile, diags.Error())
-	}
-
-	// Iterate over all blocks
-	for _, block := range file.Body().Blocks() {
-		if block.Type() == "resource" {
-			labels := block.Labels()
-			if len(labels) < 2 {
-				log.Println("Skipping malformed resource block")
-				continue
-			}
-
-			resourceType := labels[0]
-			resourceName := labels[1]
-			filename := filepath.Join(outputDir, fmt.Sprintf("%s_%s.hcl", resourceType, resourceName))
-
-			// Create a new HCL file for this resource block
-			newFile := hclwrite.NewEmptyFile()
-			newBody := newFile.Body()
-			newBody.AppendBlock(block)
-
-			// Write to the new file
-			if err := os.WriteFile(filename, newFile.Bytes(), 0644); err != nil {
-				log.Fatalf("Failed to write file %s: %v", filename, err)
-			}
-
-			fmt.Printf("Extracted: %s\n", filename)
+	/* -------- Locate the target resource block -------- */
+	var target *hclsyntax.Block
+	for _, b := range syntaxFile.Blocks {
+		if b.Type == "resource" && len(b.Labels) == 2 &&
+			b.Labels[0] == resType && b.Labels[1] == resName {
+			target = b
+			break
 		}
 	}
+	if target == nil {
+		fmt.Fprintf(os.Stderr, "Resource %s not found\n", full)
+		os.Exit(1)
+	}
+
+	/* -------- Determine the line range -------- */
+	startLn := target.Range().Start.Line
+	endLn := target.Range().End.Line
+
+	/* -------- Read only the required lines and print -------- */
+	lines, err := readLines(filePath, startLn, endLn)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	for _, l := range lines {
+		fmt.Println(l)
+	}
+}
+
+/* ---------- Helper functions ---------- */
+
+// Exit immediately if the diagnostics contain errors.
+func exitIfDiag(diags hcl.Diagnostics) {
+	if diags == nil || !diags.HasErrors() {
+		return
+	}
+	for _, d := range diags {
+		fmt.Fprintln(os.Stderr, d.Error())
+	}
+	os.Exit(1)
+}
+
+// readLines returns the lines in [startLn, endLn] (1-based, inclusive).
+func readLines(path string, startLn, endLn int) ([]string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+
+	var out []string
+	sc := bufio.NewScanner(f)
+	ln := 1
+	for sc.Scan() {
+		if ln >= startLn && ln <= endLn {
+			out = append(out, sc.Text())
+		}
+		if ln > endLn { // stop once we've read past endLn
+			break
+		}
+		ln++
+	}
+	return out, sc.Err()
 }

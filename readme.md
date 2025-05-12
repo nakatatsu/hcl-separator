@@ -1,29 +1,29 @@
 # Readme
 
-This script extracts resource blocks from HCL files for Terraform and saves them as separate text files.
+This script extracts only the specified resource block from Terraform HCL file based on the resource name.
 
-## Usage
+## Usage (Ubuntu)
+
+## command
+
+```
+tfpick <file> <resource_type.name>
+```
+
+e.g.,
+
+```
+$ ./tfpick example.tf aws_internet_gateway.main
+resource "aws_internet_gateway" "main" { # test comment2
+  vpc_id = aws_vpc.main.id # test comment3
+  tags = { # test comment4
+    Name = "${var.environment}-${var.project}-igw" # test comment5
+  } # test comment6
+} # test comment7
+```
 
 ### Build
 
 ```
-go build -o hcl-separator
-```
-
-### Install (for Ubuntu)
-
-```
-mv ./hcl-separator ~/.local/bin/
-```
-
-### Extract resource blocks
-
-```
-hcl-separator /tmp/example.tf ./output
-```
-
-### Merge extracted files back into a single Terraform file
-
-```
-bash ./scripts/merger.sh ./output ./main.tf
+go build -o tfpick
 ```
