@@ -14,12 +14,11 @@ e.g.,
 
 ```
 $ ./tfpick example.tf aws_internet_gateway.main
-resource "aws_internet_gateway" "main" { # test comment2
-  vpc_id = aws_vpc.main.id # test comment3
-  tags = { # test comment4
-    Name = "${var.environment}-${var.project}-igw" # test comment5
-  } # test comment6
-} # test comment7
+{
+  "start_line": 9,
+  "end_line": 14,
+  "content": "resource \"aws_internet_gateway\" \"main\" { # test comment2\n  vpc_id = aws_vpc.main.id # test comment3\n  tags = { # test comment4\n    Name = \"${var.environment}-${var.project}-igw\" # test comment5\n  } # test comment6\n} # test comment7"
+}
 ```
 
 ### Build
