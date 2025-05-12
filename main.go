@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/hashicorp/hcl/v2"
@@ -14,19 +15,11 @@ import (
 
 func main() {
 	if len(os.Args) != 3 {
-		fmt.Fprintf(os.Stderr, "Usage: %s <file> <resource_type.name>\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "Usage: %s <file> (<resource_type.name>|<line_number>)\n", os.Args[0])
 		os.Exit(1)
 	}
 	filePath := os.Args[1]
-	full := os.Args[2]
-
-	// Split "type.name" into type and name
-	dot := strings.IndexRune(full, '.')
-	if dot == -1 {
-		fmt.Fprintln(os.Stderr, "Please specify the resource as type.name")
-		os.Exit(1)
-	}
-	resType, resName := full[:dot], full[dot+1:]
+	identifier := os.Args[2]
 
 	/* -------- Parse HCL and obtain the AST -------- */
 	parser := hclparse.NewParser()
@@ -39,9 +32,27 @@ func main() {
 		os.Exit(1)
 	}
 
-	/* -------- Locate the target resource block -------- */
+	// Decide mode by trying to parse identifier as int
+	if line, err := strconv.Atoi(identifier); err == nil {
+		// -------- Line mode --------
+		handleLineMode(filePath, syntaxFile.Blocks, line)
+	} else {
+		// -------- Resource mode --------
+		handleResourceMode(filePath, syntaxFile.Blocks, identifier)
+	}
+}
+
+// handleResourceMode locates a resource by "type.name"
+func handleResourceMode(filePath string, blocks hclsyntax.Blocks, full string) {
+	dot := strings.IndexRune(full, '.')
+	if dot == -1 {
+		fmt.Fprintln(os.Stderr, "Please specify the resource as type.name")
+		os.Exit(1)
+	}
+	resType, resName := full[:dot], full[dot+1:]
+
 	var target *hclsyntax.Block
-	for _, b := range syntaxFile.Blocks {
+	for _, b := range blocks {
 		if b.Type == "resource" && len(b.Labels) == 2 &&
 			b.Labels[0] == resType && b.Labels[1] == resName {
 			target = b
@@ -53,18 +64,45 @@ func main() {
 		os.Exit(1)
 	}
 
-	/* -------- Determine the line range -------- */
-	startLn := target.Range().Start.Line
-	endLn := target.Range().End.Line
+	outputBlockJSON(filePath, target)
+}
 
-	/* -------- Read only the required lines -------- */
+// handleLineMode locates the innermost block that contains the given line
+func handleLineMode(filePath string, blocks hclsyntax.Blocks, line int) {
+	target := findBlockByLine(blocks, line)
+	if target == nil {
+		fmt.Fprintf(os.Stderr, "No block found containing line %d\n", line)
+		os.Exit(1)
+	}
+	outputBlockJSON(filePath, target)
+}
+
+// findBlockByLine returns the deepest block whose range includes the line.
+func findBlockByLine(blocks hclsyntax.Blocks, line int) *hclsyntax.Block {
+	for _, b := range blocks {
+		r := b.Range()
+		if line >= r.Start.Line && line <= r.End.Line {
+			// try to go deeper first
+			if inner := findBlockByLine(b.Body.Blocks, line); inner != nil {
+				return inner
+			}
+			return b
+		}
+	}
+	return nil
+}
+
+// outputBlockJSON marshals the block info and prints it.
+func outputBlockJSON(filePath string, block *hclsyntax.Block) {
+	startLn := block.Range().Start.Line
+	endLn := block.Range().End.Line
+
 	lines, err := readLines(filePath, startLn, endLn)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
 
-	/* -------- Marshal to JSON and print -------- */
 	result := struct {
 		StartLine int    `json:"start_line"`
 		EndLine   int    `json:"end_line"`
@@ -85,7 +123,6 @@ func main() {
 
 /* ---------- Helper functions ---------- */
 
-// Exit immediately if the diagnostics contain errors.
 func exitIfDiag(diags hcl.Diagnostics) {
 	if diags == nil || !diags.HasErrors() {
 		return
@@ -111,7 +148,7 @@ func readLines(path string, startLn, endLn int) ([]string, error) {
 		if ln >= startLn && ln <= endLn {
 			out = append(out, sc.Text())
 		}
-		if ln > endLn { // stop once we've read past endLn
+		if ln > endLn {
 			break
 		}
 		ln++
