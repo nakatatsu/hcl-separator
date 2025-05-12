@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -56,15 +57,30 @@ func main() {
 	startLn := target.Range().Start.Line
 	endLn := target.Range().End.Line
 
-	/* -------- Read only the required lines and print -------- */
+	/* -------- Read only the required lines -------- */
 	lines, err := readLines(filePath, startLn, endLn)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
-	for _, l := range lines {
-		fmt.Println(l)
+
+	/* -------- Marshal to JSON and print -------- */
+	result := struct {
+		StartLine int    `json:"start_line"`
+		EndLine   int    `json:"end_line"`
+		Content   string `json:"content"`
+	}{
+		StartLine: startLn,
+		EndLine:   endLn,
+		Content:   strings.Join(lines, "\n"),
 	}
+
+	out, err := json.MarshalIndent(result, "", "  ")
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	fmt.Println(string(out))
 }
 
 /* ---------- Helper functions ---------- */
