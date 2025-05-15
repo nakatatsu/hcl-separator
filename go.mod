@@ -1,4 +1,4 @@
-module github.com/nakatatsu/hcl-separator
+module github.com/nakatatsu/tfpick
 
 go 1.22.2
 
